@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naloxone Incident Management System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-form">
+            <div class="login-logo">
+                <h1>🏥 Naloxone Response Management</h1>
+                <p class="login-subtitle">Secure Incident Tracking System</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username" class="form-label">Username</label>
+                    <input type="text" id="username" class="form-control" required placeholder="Enter your username">
+                </div>
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" id="password" class="form-control" required placeholder="Enter your password">
+                </div>
+                <div id="login-error" class="status status--error hidden"></div>
+                <div id="lockout-message" class="status status--warning hidden"></div>
+                <button type="submit" class="btn btn--primary btn--full-width">
+                    <span id="login-text">Sign In</span>
+                    <span id="login-spinner" class="loading-spinner hidden"></span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="dashboard hidden">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="header-title">
+                    <h1>🏥 Incident Management Dashboard</h1>
+                    <div class="connection-status">
+                        <span id="connection-indicator" class="status-indicator inactive"></span>
+                        <span id="connection-text">Initializing...</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <div class="user-profile">
+                        <span id="user-info" class="user-info"></span>
+                        <div class="session-timer">
+                            <span id="session-time">30:00</span>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="btn btn--secondary">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="dashboard-nav">
+            <div class="nav-tabs">
+                <button class="nav-tab active" data-tab="overview">📊 Overview</button>
+                <button class="nav-tab" data-tab="incidents">📋 Incidents</button>
+                <button class="nav-tab" data-tab="reports">📈 Reports</button>
+                <button class="nav-tab" data-tab="import" id="import-tab">📁 Data Import</button>
+                <button class="nav-tab admin-only hidden" data-tab="users" id="users-tab">👥 Users</button>
+            </div>
+        </nav>
+
+        <!-- Tab Content -->
+        <main class="dashboard-main">
+            <!-- Overview Tab -->
+            <div id="overview-tab" class="tab-content active">
+                <div class="overview-header">
+                    <h2>System Overview</h2>
+                    <div class="ai-status">
+                        <span id="ai-indicator" class="status-indicator active"></span>
+                        <span>AI Analysis Active</span>
+                    </div>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card primary">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="total-incidents">0</div>
+                            <div class="stat-label">Total Incidents</div>
+                            <div class="stat-change neutral" id="incidents-change">No data yet</div>
+                        </div>
+                    </div>
+                    <div class="stat-card secondary">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="this-month">0</div>
+                            <div class="stat-label">This Month</div>
+                            <div class="stat-change neutral" id="month-change">No data yet</div>
+                        </div>
+                    </div>
+                    <div class="stat-card tertiary">
+                        <div class="stat-icon">💉</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="total-doses">0</div>
+                            <div class="stat-label">Naloxone Doses</div>
+                            <div class="stat-change neutral" id="doses-change">No data yet</div>
+                        </div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="success-rate">--</div>
+                            <div class="stat-label">Recovery Rate</div>
+                            <div class="stat-change neutral" id="success-change">No data yet</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <h3>Welcome to Your Incident Management System</h3>
+                    <p>Your dashboard is ready and waiting for data. Get started by:</p>
+                    <div class="empty-actions">
+                        <button class="btn btn--primary" onclick="switchTab('incidents')">➕ Add Your First Incident</button>
+                        <button class="btn btn--secondary" onclick="switchTab('import')">📁 Import CSV Data</button>
+                    </div>
+                </div>
+
+                <div id="charts-section" class="charts-grid hidden">
+                    <div class="chart-container" style="position: relative; height: 400px;">
+                        <div class="chart-header">
+                            <h3>Incident Trends</h3>
+                            <div class="chart-controls">
+                                <select id="trend-period" class="form-control">
+                                    <option value="6">Last 6 months</option>
+                                    <option value="12" selected>Last 12 months</option>
+                                    <option value="24">Last 24 months</option>
+                                </select>
+                            </div>
+                        </div>
+                        <canvas id="incidents-chart"></canvas>
+                    </div>
+                    <div class="chart-container" style="position: relative; height: 400px;">
+                        <div class="chart-header">
+                            <h3>Location Distribution</h3>
+                        </div>
+                        <canvas id="location-chart"></canvas>
+                    </div>
+                </div>
+
+                <div id="insights-panel" class="insights-panel hidden">
+                    <h3>🤖 AI Insights</h3>
+                    <div id="ai-insights" class="insights-content">
+                        <div class="insight-card">
+                            <div class="insight-header">System Status</div>
+                            <div class="insight-text">System is ready to collect and analyze incident data. AI validation is active for all data imports.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Incidents Tab -->
+            <div id="incidents-tab" class="tab-content hidden">
+                <div class="incidents-header">
+                    <div class="header-title">
+                        <h2>Incident Records</h2>
+                        <div class="record-count">
+                            <span id="incident-count">0 incidents</span>
+                        </div>
+                    </div>
+                    <div class="incidents-actions">
+                        <div class="search-filter-group">
+                            <input type="text" id="search-incidents" class="form-control" placeholder="🔍 Search incidents...">
+                            <select id="filter-location" class="form-control">
+                                <option value="">📍 All Locations</option>
+                            </select>
+                            <select id="filter-outcome" class="form-control">
+                                <option value="">📊 All Outcomes</option>
+                                <option value="Recovered">✅ Recovered</option>
+                                <option value="Stabilized">🔄 Stabilized</option>
+                                <option value="Transferred">🏥 Transferred</option>
+                                <option value="Ongoing">⏳ Ongoing</option>
+                            </select>
+                        </div>
+                        <button id="add-incident-btn" class="btn btn--primary">➕ Add Incident</button>
+                    </div>
+                </div>
+
+                <div class="incidents-table-container">
+                    <div id="incidents-empty" class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <h3>No Incidents Yet</h3>
+                        <p>Start building your incident database by adding your first record.</p>
+                        <button class="btn btn--primary" onclick="openIncidentModal()">➕ Add First Incident</button>
+                    </div>
+                    
+                    <div id="incidents-table" class="incidents-table hidden">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Incident ID</th>
+                                    <th>Date/Time</th>
+                                    <th>Location</th>
+                                    <th>Community Member</th>
+                                    <th>Staff Response</th>
+                                    <th>Naloxone Doses</th>
+                                    <th>Outcome</th>
+                                    <th>Follow-up</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incidents-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="pagination-container" class="pagination-container hidden">
+                    <div class="pagination-info">
+                        <span>Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-records">0</span> incidents</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <button id="prev-page" class="btn btn--secondary">← Previous</button>
+                        <span id="page-numbers"></span>
+                        <button id="next-page" class="btn btn--secondary">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports Tab -->
+            <div id="reports-tab" class="tab-content hidden">
+                <div class="reports-header">
+                    <h2>Report Generation</h2>
+                    <p class="reports-subtitle">Generate comprehensive reports for analysis and compliance</p>
+                </div>
+                
+                <div id="reports-empty" class="empty-state">
+                    <div class="empty-icon">📈</div>
+                    <h3>No Data for Reports</h3>
+                    <p>Add incident data to generate comprehensive reports and analytics.</p>
+                    <button class="btn btn--primary" onclick="switchTab('incidents')">➕ Add Incidents</button>
+                </div>
+                
+                <div id="report-templates" class="report-templates hidden">
+                    <div class="report-card" data-template="monthly">
+                        <div class="report-icon">📊</div>
+                        <div class="report-content">
+                            <h3>Monthly Summary Report</h3>
+                            <p>Comprehensive monthly overview with statistics, trends, and AI-generated insights</p>
+                            <div class="report-features">
+                                <span class="feature-tag">📈 Trend Analysis</span>
+                                <span class="feature-tag">🤖 AI Insights</span>
+                                <span class="feature-tag">📊 Visualizations</span>
+                            </div>
+                        </div>
+                        <div class="report-actions">
+                            <button class="btn btn--primary" onclick="generateReport('monthly', 'pdf')">📄 Export PDF</button>
+                            <button class="btn btn--secondary" onclick="generateReport('monthly', 'excel')">📊 Export Excel</button>
+                            <button class="btn btn--outline" onclick="generateReport('monthly', 'csv')">📋 Export CSV</button>
+                        </div>
+                    </div>
+
+                    <div class="report-card" data-template="location">
+                        <div class="report-icon">📍</div>
+                        <div class="report-content">
+                            <h3>Location Analysis Report</h3>
+                            <p>Geographic incident patterns, hotspot identification, and resource allocation recommendations</p>
+                            <div class="report-features">
+                                <span class="feature-tag">🗺️ Heat Maps</span>
+                                <span class="feature-tag">📊 Statistics</span>
+                                <span class="feature-tag">💡 Recommendations</span>
+                            </div>
+                        </div>
+                        <div class="report-actions">
+                            <button class="btn btn--primary" onclick="generateReport('location', 'pdf')">📄 Export PDF</button>
+                            <button class="btn btn--secondary" onclick="generateReport('location', 'excel')">📊 Export Excel</button>
+                            <button class="btn btn--outline" onclick="generateReport('location', 'csv')">📋 Export CSV</button>
+                        </div>
+                    </div>
+
+                    <div class="report-card" data-template="staff">
+                        <div class="report-icon">👨‍⚕️</div>
+                        <div class="report-content">
+                            <h3>Staff Performance Report</h3>
+                            <p>Response time analysis, training recommendations, and performance metrics</p>
+                            <div class="report-features">
+                                <span class="feature-tag">⏱️ Response Times</span>
+                                <span class="feature-tag">📚 Training Needs</span>
+                                <span class="feature-tag">🏆 Performance</span>
+                            </div>
+                        </div>
+                        <div class="report-actions">
+                            <button class="btn btn--primary" onclick="generateReport('staff', 'pdf')">📄 Export PDF</button>
+                            <button class="btn btn--secondary" onclick="generateReport('staff', 'excel')">📊 Export Excel</button>
+                            <button class="btn btn--outline" onclick="generateReport('staff', 'csv')">📋 Export CSV</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Import Tab -->
+            <div id="import-tab-content" class="tab-content hidden">
+                <div class="import-header">
+                    <h2>Mass Data Import</h2>
+                    <p class="import-subtitle">AI-powered data validation and processing</p>
+                </div>
+                
+                <div class="import-container">
+                    <div class="import-dropzone" id="csv-dropzone">
+                        <div class="dropzone-content">
+                            <div class="dropzone-icon">📁</div>
+                            <h3>Drag & Drop Files Here</h3>
+                            <p>Or click to browse for CSV, Excel files</p>
+                            <input type="file" id="csv-file-input" accept=".csv,.xlsx,.xls" multiple hidden>
+                            <button class="btn btn--secondary" onclick="document.getElementById('csv-file-input').click()">📂 Browse Files</button>
+                            <div class="format-support">
+                                <span>Supported formats: CSV, XLSX, XLS</span>
+                                <span>Max size: 50MB per file</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="import-progress" class="import-progress hidden">
+                        <div class="progress-header">
+                            <h3>🤖 AI Processing</h3>
+                            <span id="progress-stage">Analyzing data quality...</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-details">
+                            <div id="progress-text">Initializing AI validation...</div>
+                            <div id="progress-stats"></div>
+                        </div>
+                    </div>
+
+                    <div id="import-preview" class="import-preview hidden">
+                        <div class="preview-header">
+                            <h3>📋 Data Preview & Validation</h3>
+                            <div class="validation-summary" id="validation-summary"></div>
+                        </div>
+                        
+                        <div class="column-mapping" id="column-mapping"></div>
+                        
+                        <div class="preview-table-container">
+                            <div id="preview-table"></div>
+                        </div>
+                        
+                        <div class="import-actions">
+                            <button id="confirm-import" class="btn btn--primary">✅ Confirm Import (<span id="valid-records">0</span> records)</button>
+                            <button id="cancel-import" class="btn btn--secondary">❌ Cancel</button>
+                        </div>
+                    </div>
+
+                    <div id="import-results" class="import-results hidden">
+                        <div class="results-header">
+                            <h3>📊 Import Results</h3>
+                        </div>
+                        <div class="results-grid">
+                            <div class="result-card success">
+                                <div class="result-value" id="imported-count">0</div>
+                                <div class="result-label">Records Imported</div>
+                            </div>
+                            <div class="result-card warning">
+                                <div class="result-value" id="skipped-count">0</div>
+                                <div class="result-label">Records Skipped</div>
+                            </div>
+                            <div class="result-card error">
+                                <div class="result-value" id="error-count">0</div>
+                                <div class="result-label">Errors</div>
+                            </div>
+                        </div>
+                        <div id="import-log" class="import-log"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Tab (Admin Only) -->
+            <div id="users-tab-content" class="tab-content hidden">
+                <div class="users-header">
+                    <div class="header-title">
+                        <h2>User Management</h2>
+                        <div class="users-summary">
+                            <span id="users-count">1 active user</span>
+                        </div>
+                    </div>
+                    <button id="add-user-btn" class="btn btn--primary">👤 Add User</button>
+                </div>
+                
+                <div class="users-controls">
+                    <div class="users-filters">
+                        <input type="text" id="search-users" class="form-control" placeholder="🔍 Search users...">
+                        <select id="filter-role" class="form-control">
+                            <option value="">👥 All Roles</option>
+                            <option value="admin">🛡️ Admin</option>
+                            <option value="analyst">📊 Analyst</option>
+                            <option value="viewer">👁️ Viewer</option>
+                        </select>
+                        <select id="filter-status" class="form-control">
+                            <option value="">📊 All Status</option>
+                            <option value="active">✅ Active</option>
+                            <option value="inactive">❌ Inactive</option>
+                            <option value="locked">🔒 Locked</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="users-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Last Login</th>
+                                <th>Failed Attempts</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Incident Modal -->
+    <div id="incident-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="incident-modal-title">➕ Add New Incident</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="incident-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="incident-date" class="form-label">📅 Date</label>
+                        <input type="date" id="incident-date" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="incident-time" class="form-label">🕐 Time</label>
+                        <input type="time" id="incident-time" class="form-control" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="incident-location" class="form-label">📍 Location</label>
+                    <input type="text" id="incident-location" class="form-control" required placeholder="e.g., Drop-in Center, Safe Injection Site">
+                </div>
+                
+                <div class="form-group">
+                    <label for="community-member" class="form-label">👤 Community Member</label>
+                    <input type="text" id="community-member" class="form-control" required placeholder="Name or identifier">
+                </div>
+                
+                <div class="form-group">
+                    <label for="staff-involved" class="form-label">👨‍⚕️ Staff Involved</label>
+                    <input type="text" id="staff-involved" class="form-control" required placeholder="Names of responding staff">
+                </div>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="nasal-naloxone" class="form-label">👃 Nasal Naloxone</label>
+                        <input type="number" id="nasal-naloxone" class="form-control" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="intramuscular-naloxone" class="form-label">💉 Intramuscular Naloxone</label>
+                        <input type="number" id="intramuscular-naloxone" class="form-control" min="0" value="0">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="incident-description" class="form-label">📝 Description</label>
+                    <textarea id="incident-description" class="form-control" rows="4" required placeholder="Detailed description of the incident and response..."></textarea>
+                </div>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="incident-outcome" class="form-label">📊 Outcome</label>
+                        <select id="incident-outcome" class="form-control" required>
+                            <option value="">Select outcome...</option>
+                            <option value="Recovered">✅ Recovered</option>
+                            <option value="Stabilized">🔄 Stabilized</option>
+                            <option value="Transferred">🏥 Transferred to Hospital</option>
+                            <option value="Ongoing">⏳ Ongoing Care</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-checkbox">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="follow-up-required">
+                            <span class="checkmark"></span>
+                            📋 Follow-up Required
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn--primary">💾 Save Incident</button>
+                    <button type="button" class="btn btn--secondary modal-cancel">❌ Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="user-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>👤 Add New User</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="user-form">
+                <div class="form-group">
+                    <label for="new-username" class="form-label">👤 Username</label>
+                    <input type="text" id="new-username" class="form-control" required placeholder="Enter username">
+                </div>
+                
+                <div class="form-group">
+                    <label for="new-email" class="form-label">📧 Email</label>
+                    <input type="email" id="new-email" class="form-control" required placeholder="user@facility.org">
+                </div>
+                
+                <div class="form-group">
+                    <label for="new-role" class="form-label">🔰 Role</label>
+                    <select id="new-role" class="form-control" required>
+                        <option value="">Select role...</option>
+                        <option value="admin">🛡️ Admin - Full system access</option>
+                        <option value="analyst">📊 Analyst - View and edit incidents</option>
+                        <option value="viewer">👁️ Viewer - Read-only access</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">🔐 Generated Password</label>
+                    <div class="password-display">
+                        <input type="text" id="generated-password" class="form-control" readonly>
+                        <button type="button" id="generate-password" class="btn btn--secondary">🎲 Generate</button>
+                    </div>
+                    <div class="password-requirements">
+                        Password meets security requirements: 8+ characters, mixed case, numbers, symbols
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn--primary">✅ Create User</button>
+                    <button type="button" class="btn btn--secondary modal-cancel">❌ Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Session Timeout Warning -->
+    <div id="session-warning" class="modal hidden">
+        <div class="modal-content warning-modal">
+            <div class="modal-header warning">
+                <h3>⚠️ Session Expiring</h3>
+            </div>
+            <div class="modal-body">
+                <p>Your session will expire in <span id="countdown" class="countdown">5</span> minutes due to inactivity.</p>
+                <p>Would you like to extend your session?</p>
+            </div>
+            <div class="modal-actions">
+                <button id="extend-session" class="btn btn--primary">⏰ Extend Session</button>
+                <button id="logout-now" class="btn btn--secondary">🚪 Logout Now</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner large"></div>
+            <h3 id="loading-title">Processing...</h3>
+            <p id="loading-message">Please wait while we process your request</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
